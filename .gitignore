@@ -23,3 +23,6 @@ go.work
 # IDEs and Tools
 .idea
 .vscode
+
+# Output directory
+build/
