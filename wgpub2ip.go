@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"golang.org/x/crypto/blake2s"
 	"io"
+	"net"
 	"os"
 )
 
@@ -14,15 +17,27 @@ var (
 )
 
 func main() {
+	readArgs()
+	_, ipnet, err := net.ParseCIDR(network)
+	printFatalErr(err)
 
+	binPubKey, err := base64.StdEncoding.DecodeString(pubKey)
+	printFatalErr(err)
+	hashsum := blake2s.Sum256(binPubKey)
+
+	ip := net.IP(make([]byte, len(ipnet.IP)))
+	for i := range ipnet.IP {
+		ip[i] = (ipnet.IP[i] & ipnet.Mask[i]) | (hashsum[i+blake2s.Size-len(ipnet.IP)] & ^ipnet.Mask[i])
+	}
+	fmt.Println(ip)
 }
 
-func parseArgs() {
+func readArgs() {
 	var help bool
 	flag.BoolVar(&help, "h", false, "")
-	flag.BoolVar(&help, "-help", false, "")
+	flag.BoolVar(&help, "help", false, "")
 	flag.StringVar(&pubKey, "k", "", "")
-	flag.StringVar(&pubKey, "-pubkey", "", "")
+	flag.StringVar(&pubKey, "pubkey", "", "")
 	flag.Parse()
 	if help {
 		printHelp()
@@ -38,9 +53,7 @@ func parseArgs() {
 
 	if pubKey == "" {
 		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			panic(err) // TODO make this more descriptive
-		}
+		printFatalErr(err)
 		pubKey = string(data)
 	}
 }
@@ -58,8 +71,8 @@ OPTIONS:
   -k, --pubkey    Key to generate the IP from
 
 EXAMPLES:
-  %s -k 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' 192.0.2.0/24
-  cat pubkey.txt | %s 2001:db8::/32
+  %s -k 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' 2001:db8::/64
+  cat pubkey.txt | %s 192.0.2.0/24
 
 AUTHOR:
   Miguel Dorta <contact@migueldorta.com>
@@ -72,4 +85,11 @@ VERSION:
   wgpub2ip %s
 
 `, os.Args[0], os.Args[0], os.Args[0], Version)
+}
+
+func printFatalErr(err error) {
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
